@@ -1,3 +1,4 @@
+import asyncio
 import json
 from collections import namedtuple, MutableMapping
 
@@ -26,7 +27,7 @@ def default_format_error(error):
     return {'message': six.text_type(error)}
 
 
-def run_http_query(schema, request_method, data, query_data=None, batch_enabled=False, catch=False, **execute_options):
+async def run_http_query(schema, request_method, data, query_data=None, batch_enabled=False, catch=False, **execute_options):
     if request_method not in ('get', 'post'):
         raise HttpQueryError(
             405,
@@ -70,13 +71,15 @@ def run_http_query(schema, request_method, data, query_data=None, batch_enabled=
 
     all_params = [get_graphql_params(entry, extra_data) for entry in data]
 
-    responses = [get_response(
+    response_coros = [get_response(
         schema,
         params,
         catch,
         allow_only_query,
         **execute_options
     ) for params in all_params]
+
+    responses = await asyncio.gather(*response_coros)
 
     return responses, all_params
 
@@ -124,9 +127,9 @@ def get_graphql_params(data, query_data):
     return GraphQLParams(query, load_json_variables(variables), operation_name)
 
 
-def get_response(schema, params, catch=None, allow_only_query=False, **kwargs):
+async def get_response(schema, params, catch=None, allow_only_query=False, **kwargs):
     try:
-        execution_result = execute_graphql_request(
+        execution_result = await execute_graphql_request(
             schema,
             params,
             allow_only_query,
@@ -159,7 +162,7 @@ def format_execution_result(execution_result, format_error):
     return GraphQLResponse(response, status_code)
 
 
-def execute_graphql_request(schema, params, allow_only_query=False, **kwargs):
+async def execute_graphql_request(schema, params, allow_only_query=False, **kwargs):
     if not params.query:
         raise HttpQueryError(400, 'Must provide query string.')
 
@@ -187,7 +190,7 @@ def execute_graphql_request(schema, params, allow_only_query=False, **kwargs):
             )
 
     try:
-        return execute(
+        return await execute(
             schema,
             ast,
             operation_name=params.operation_name,
